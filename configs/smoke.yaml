@@ -1,0 +1,74 @@
+# Smoke configuration: synthetic judges, candidates and annotators; runs offline and exercises every component.
+name: smoke
+seed: 7
+
+paths:
+  raw_dir: data/raw
+  prompts: data/smoke/audit_prompts.jsonl
+  calibration_prompts: data/smoke/calibration_prompts.jsonl
+  jury_prompts: data/smoke/jury_prompts.jsonl
+  calibration_annotations: data/smoke/calibration_annotations.jsonl
+  jury_annotations: data/smoke/jury_annotations.jsonl
+  scores: data/smoke/scores_audit.json
+  calibration_scores: data/smoke/scores_calibration.json
+  results_dir: results/smoke
+
+benchmarks:
+  mt_bench:      {audit: 4, calibration: 8, jury: 3}
+  alpaca_eval_2: {audit: 4, calibration: 8, jury: 3}
+  arena_hard:    {audit: 4, calibration: 8, jury: 3}
+
+candidates:
+  - {name: cand-strong, client: synthetic}
+  - {name: cand-good,   client: synthetic}
+  - {name: cand-mid,    client: synthetic}
+  - {name: cand-weak,   client: synthetic}
+extra_candidates:
+  - {name: cand-extra,  client: synthetic}
+
+judges:
+  - {name: judge-a, client: synthetic, bias: 0.3,  noise_sd: 0.8, position_effect: 0.6, context_effect: 0.5, pairwise_position_bias: 0.4}
+  - {name: judge-b, client: synthetic, bias: -0.2, noise_sd: 0.6, position_effect: 0.3, context_effect: 0.5, pairwise_position_bias: 0.2}
+  - {name: judge-c, client: synthetic, bias: 0.0,  noise_sd: 1.0, position_effect: 0.9, context_effect: 0.6, pairwise_position_bias: 0.7}
+
+criteria: [correctness, helpfulness, safety, brevity]
+criterion_weights: [0.25, 0.25, 0.25, 0.25]
+
+scoring: {scale: [1, 10], invalid_retries: 1, fallback_score: 5, orders: [fwd, rev]}
+
+probes:
+  iia: {variants: [remove_one, add_one, replace_one]}
+  pi:  {per_criterion: true, include_overall: false}
+  cm:  {delta: 1.0}
+  anonymity: {empirical: true}
+
+aggregators: [majority_vote, score_mean, borda, arena_bt, mtbench_avg, best_of_judge, perm_consensus, bch]
+pipeline_overrides: {}   # per-aggregator pipeline assignment
+pi_cell_overrides: {}   # per-aggregator PI cell: judge_level (verdict-flip mean) or composite (ranking-change rate)
+ablation_aggregators: [borda, bch_no_sym, bch, perm_consensus, median_score_mean]
+leaderboard_aggregators: [mtbench_avg, arena_bt, win_rate, lc_win_rate]
+witness_aggregators: [constant, dictatorship, weighted_utilitarian]
+per_judge_counts: true
+
+best_of_judge: {judge: judge-a}
+dictatorship: {judge: judge-a, criterion: correctness}
+constant: {order: [cand-weak, cand-mid, cand-good, cand-strong, cand-extra]}
+arena_bt: {prior: 0.01, strength_tol: 1.0e-6}
+lc_win_rate: {length_scale: auto}
+bch: {alpha: 0.05}
+
+calibration: {iaa_threshold: 0.7, thresholds: [0.5, 0.6, 0.7, 0.8]}
+
+stats: {bootstrap_resamples: 200, mcnemar_reference: bch, bonferroni_alpha: 0.05}
+
+extras:
+  self_enhancement: {judge: judge-a, candidate: cand-good, n_matched_pairs: 100}
+
+synthetic:
+  enabled: true
+  quality_sd: 1.0
+  candidate_means: {cand-strong: 1.2, cand-good: 0.6, cand-mid: 0.0, cand-weak: -0.8, cand-extra: 0.2}
+  verbosity: {cand-strong: 0.5, cand-good: 0.2, cand-mid: 0.0, cand-weak: -0.4, cand-extra: 0.0}
+  n_annotators: 2
+  annotator_noise_sd: 0.4
+  jury_noise_sd: 0.5

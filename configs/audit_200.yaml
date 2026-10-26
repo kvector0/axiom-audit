@@ -1,0 +1,74 @@
+# 200-prompt audit: three judges, four criteria, four candidates, eight aggregators.
+name: audit_200
+seed: 20260826
+
+paths:
+  raw_dir: data/raw
+  prompts: data/audit_200/audit_prompts.jsonl
+  calibration_prompts: data/audit_200/calibration_prompts.jsonl
+  jury_prompts: data/audit_200/jury_prompts.jsonl
+  calibration_annotations: data/audit_200/calibration_annotations.jsonl   # human rankings, JSONL
+  jury_annotations: data/audit_200/jury_annotations.jsonl   # human rankings, JSONL
+  scores: data/audit_200/scores_audit.json
+  calibration_scores: data/audit_200/scores_calibration.json
+  results_dir: results/audit_200
+
+benchmarks:   # prompts per benchmark and split
+  mt_bench:      {audit: 50, calibration: 29,  jury: 20}
+  alpaca_eval_2: {audit: 75, calibration: 291, jury: 15}
+  arena_hard:    {audit: 75, calibration: 180, jury: 15}
+
+candidates:   # response generators
+  - {name: gpt-4o,                 client: openai,    model: gpt-4o-2024-08-06,                                   temperature: 0, max_tokens: 1024, seed: 0}
+  - {name: claude-3.5-sonnet,      client: anthropic, model: claude-3-5-sonnet-20241022,                          temperature: 0, max_tokens: 1024}
+  - {name: llama-3.1-70b-instruct, client: hf,        model: hugging-quants/Meta-Llama-3.1-70B-Instruct-AWQ-INT4, temperature: 0, max_tokens: 1024, dtype: float16}
+  - {name: llama-3.1-8b-instruct,  client: hf,        model: meta-llama/Llama-3.1-8B-Instruct,                    temperature: 0, max_tokens: 1024, dtype: float16}
+extra_candidates:   # held-out generator for the add-one and replace-one probes
+  - {name: gpt-4o-mini,            client: openai,    model: gpt-4o-mini-2024-07-18,                              temperature: 0, max_tokens: 1024, seed: 0}
+
+judges:
+  - {name: gpt-4o,                 client: openai,    model: gpt-4o-2024-08-06,                                   temperature: 0, max_tokens: 64, seed: 0}
+  - {name: claude-3.5-sonnet,      client: anthropic, model: claude-3-5-sonnet-20241022,                          temperature: 0, max_tokens: 64}
+  - {name: llama-3.1-70b-instruct, client: hf,        model: hugging-quants/Meta-Llama-3.1-70B-Instruct-AWQ-INT4, temperature: 0, max_tokens: 64, dtype: float16}
+
+criteria: [correctness, helpfulness, safety, brevity]
+criterion_weights: [0.25, 0.25, 0.25, 0.25]
+
+scoring:
+  scale: [1, 10]
+  invalid_retries: 1   # re-queries after an unparseable score
+  fallback_score: 5   # score assigned after retries are exhausted
+  orders: [fwd, rev]   # candidate listing orders averaged by the pipeline
+
+probes:
+  iia: {variants: [remove_one, add_one, replace_one]}
+  pi:  {per_criterion: true, include_overall: false}
+  cm:  {delta: 1.0}   # size of the single-score increase
+  anonymity: {empirical: false}   # judge-permutation check in addition to the analytic cell
+
+aggregators: [majority_vote, score_mean, borda, arena_bt, mtbench_avg, best_of_judge, perm_consensus, bch]
+pipeline_overrides: {}   # per-aggregator pipeline assignment
+pi_cell_overrides: {}   # per-aggregator PI cell: judge_level (verdict-flip mean) or composite (ranking-change rate)
+ablation_aggregators: [borda, bch_no_sym, bch, perm_consensus, median_score_mean]
+leaderboard_aggregators: [mtbench_avg, arena_bt, win_rate, lc_win_rate]
+witness_aggregators: []
+per_judge_counts: true   # remove-one counts per (aggregator, judge, benchmark)
+
+best_of_judge: {judge: gpt-4o}   # oracle judge
+arena_bt: {prior: 0.01, strength_tol: 1.0e-6}   # pseudo-count and tie band on log-strengths
+lc_win_rate: {length_scale: auto}   # auto: standard deviation of candidate lengths
+bch: {alpha: 0.05}   # conformal miscoverage level
+
+calibration:
+  iaa_threshold: 0.7   # per-prompt Krippendorff alpha (ordinal) retained above this value
+  thresholds: [0.5, 0.6, 0.7, 0.8]   # thresholds reported by the sensitivity check
+
+stats:
+  bootstrap_resamples: 1000
+  mcnemar_reference: bch   # aggregator every other aggregator is paired against
+  bonferroni_alpha: 0.05
+
+extras:
+  self_enhancement: {judge: gpt-4o, candidate: gpt-4o, n_matched_pairs: 100}
+
+synthetic: {enabled: false}
